@@ -8,34 +8,46 @@ import data_loader
 class AutoEncoder(torch.nn.Module):
   def __init__(self):
     super(AutoEncoder, self).__init__()
-    C = 16
+    C = 8
     self.encoder = torch.nn.Sequential(
-      torch.nn.Conv2d( 2, C, 5, padding=2, stride=2, padding_mode='replicate' ),
+      torch.nn.BatchNorm2d(2),
+
+      torch.nn.Conv2d( 2, C, 3, padding=1, stride=1 ), # 256x512
       torch.nn.BatchNorm2d( C ),
       torch.nn.ReLU(),
-      torch.nn.Conv2d( C, C*2, 5, padding=2, stride=2 ),
+
+      torch.nn.Conv2d( C, C*2, 5, padding=2, stride=2 ), # 128x256
       torch.nn.BatchNorm2d( C*2 ),
       torch.nn.ReLU(),
-      torch.nn.Conv2d( C*2, C*4, 5, padding=2, stride=2 ),
+
+      torch.nn.Conv2d( C*2, C*4, 5, padding=2, stride=2 ), # 64x128
       torch.nn.BatchNorm2d( C*4 ),
       torch.nn.ReLU(),
-      torch.nn.Conv2d( C*4, C*8, 5, padding=2, stride=2 ),
+
+      torch.nn.Conv2d( C*4, C*8, 5, padding=2, stride=2 ), # 32x64
       torch.nn.BatchNorm2d( C*8 ),
       torch.nn.ReLU(),
-      torch.nn.Conv2d( C*8, C*16, 5, padding=2, stride=2 ),
+
+      torch.nn.Conv2d( C*8, C*16, 3, padding=1, stride=2 ), # 16x32
       torch.nn.BatchNorm2d( C*16 ),
       torch.nn.ReLU(),
-      torch.nn.Conv2d( C*16, C*32, 5, padding=2, stride=2 ),
+
+      torch.nn.Conv2d( C*16, C*32, 3, padding=1, stride=2 ), # 8x16
       torch.nn.BatchNorm2d( C*32 ),
       torch.nn.ReLU(),
 
-      torch.nn.Conv2d( C*32, C*64, 5, padding=2, stride=2 ),
+      torch.nn.Conv2d( C*32, C*64, 3, padding=1, stride=2 ), # 4x8
       torch.nn.BatchNorm2d( C*64 ),
       torch.nn.ReLU(),
-      torch.nn.Flatten(),
 
+      torch.nn.Conv2d( C*64, C*128, 3, padding=1, stride=2 ), # 2x4
+      torch.nn.BatchNorm2d( C*128 ),
+      torch.nn.ReLU(),
+
+      torch.nn.Flatten(),
       torch.nn.Linear(8192, 2048),
       torch.nn.SiLU(),
+
       torch.nn.Linear( 2048, 128 )
     )
     self.decoder = torch.nn.Sequential(
@@ -43,30 +55,39 @@ class AutoEncoder(torch.nn.Module):
       torch.nn.SiLU(),
 
       torch.nn.Linear( 2048, 8192 ),
-      torch.nn.Unflatten( 1, (C*64, 2, 4) ),
+      torch.nn.Unflatten( 1, (C*128, 2, 4) ),
+      torch.nn.BatchNorm2d( C*128 ),
+      torch.nn.ReLU(),
+
+      torch.nn.ConvTranspose2d( C*128, C*64, 3, padding=1, stride=2, output_padding=1 ), # 4x8
       torch.nn.BatchNorm2d( C*64 ),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d( C*64, C*32, 5, padding=2, stride=2, output_padding=1 ),
+
+      torch.nn.ConvTranspose2d( C*64, C*32, 3, padding=1, stride=2, output_padding=1 ), # 8x16
       torch.nn.BatchNorm2d( C*32 ),
       torch.nn.ReLU(),
 
-      torch.nn.ConvTranspose2d( C*32, C*16, 5, padding=2, stride=2, output_padding=1 ),
+      torch.nn.ConvTranspose2d( C*32, C*16, 3, padding=1, stride=2, output_padding=1 ), # 16x32
       torch.nn.BatchNorm2d( C*16 ),
       torch.nn.ReLU(),
 
-      torch.nn.ConvTranspose2d( C*16, C*8, 5, padding=2, stride=2, output_padding=1 ),
+      torch.nn.ConvTranspose2d( C*16, C*8, 3, padding=1, stride=2, output_padding=1 ), # 32x64
       torch.nn.BatchNorm2d( C*8 ),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ),
+
+      torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ), # 64x128
       torch.nn.BatchNorm2d( C*4 ),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ),
+
+      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 128x256
       torch.nn.BatchNorm2d( C*2 ),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ),
+
+      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 256x512
       torch.nn.BatchNorm2d( C ),
       torch.nn.ReLU(),
-      torch.nn.ConvTranspose2d( C, 2, 5, padding=2, stride=2, output_padding=1 ),
+
+      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=1 )
     )
 
 def main():
