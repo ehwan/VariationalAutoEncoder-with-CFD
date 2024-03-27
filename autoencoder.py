@@ -3,6 +3,8 @@
 import torch
 import data_loader
 
+# velocity snapshot at fixed time t ( 2, 256, 512 )
+# encode to latent vector ( 32 )
 class AutoEncoder(torch.nn.Module):
   def __init__(self):
     super(AutoEncoder, self).__init__()
@@ -26,10 +28,12 @@ class AutoEncoder(torch.nn.Module):
       torch.nn.Conv2d( C*16, C*32, 5, padding=2, stride=2 ),
       torch.nn.BatchNorm2d( C*32 ),
       torch.nn.ReLU(),
+
       torch.nn.Conv2d( C*32, C*64, 5, padding=2, stride=2 ),
-      torch.nn.BatchNorm2d( C*64),
+      torch.nn.BatchNorm2d( C*64 ),
       torch.nn.ReLU(),
       torch.nn.Flatten(),
+
       torch.nn.Linear(8192, 2048),
       torch.nn.SiLU(),
       torch.nn.Linear( 2048, 128 )
@@ -37,6 +41,7 @@ class AutoEncoder(torch.nn.Module):
     self.decoder = torch.nn.Sequential(
       torch.nn.Linear( 128, 2048 ),
       torch.nn.SiLU(),
+
       torch.nn.Linear( 2048, 8192 ),
       torch.nn.Unflatten( 1, (C*64, 2, 4) ),
       torch.nn.BatchNorm2d( C*64 ),
@@ -44,9 +49,11 @@ class AutoEncoder(torch.nn.Module):
       torch.nn.ConvTranspose2d( C*64, C*32, 5, padding=2, stride=2, output_padding=1 ),
       torch.nn.BatchNorm2d( C*32 ),
       torch.nn.ReLU(),
+
       torch.nn.ConvTranspose2d( C*32, C*16, 5, padding=2, stride=2, output_padding=1 ),
       torch.nn.BatchNorm2d( C*16 ),
       torch.nn.ReLU(),
+
       torch.nn.ConvTranspose2d( C*16, C*8, 5, padding=2, stride=2, output_padding=1 ),
       torch.nn.BatchNorm2d( C*8 ),
       torch.nn.ReLU(),
@@ -61,15 +68,6 @@ class AutoEncoder(torch.nn.Module):
       torch.nn.ReLU(),
       torch.nn.ConvTranspose2d( C, 2, 5, padding=2, stride=2, output_padding=1 ),
     )
-
-# test_input = torch.zeros( (1, 2, 256, 512), dtype=torch.float32 )
-# autoencoder = AutoEncoder()
-# test_output = autoencoder.encoder( test_input )
-# print( test_output.shape )
-# decoded = autoencoder.decoder( test_output )
-# print( decoded.shape )
-
-
 
 def main():
   autoencoder = AutoEncoder()
@@ -116,9 +114,9 @@ def main():
       optimizer.step()
 
     if epoch % 10 == 9:
-      torch.save( autoencoder.state_dict(), 're200ae.pt' )
-      torch.save( optimizer.state_dict(), 're200ae_optim.pt' )
-      torch.save( losses, 're200ae_losses.pt' )
+      torch.save( autoencoder.state_dict(), 'autoencoder.pt' )
+      torch.save( optimizer.state_dict(), 'autoencoder_optim.pt' )
+      torch.save( losses, 'autoencoder_loss.pt' )
 
 
 if __name__ == '__main__':
