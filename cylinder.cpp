@@ -2,7 +2,6 @@
 
 #include <fstream>
 #include <iostream>
-#include <thread>
 #include <vector>
 
 // ========================= Global Settings =========================
@@ -295,7 +294,7 @@ struct CylinderWakeLBM
 
 int main(int argc, char** argv)
 {
-  std::vector<int> Res = { 5, 20, 40, 60, 80, 100, 150, 200 };
+  std::vector<int> Res = { 5, 40, 100, 200 };
 
   for (int re : Res)
   {
@@ -306,6 +305,8 @@ int main(int argc, char** argv)
     scalar_type nu = 1.0 / (double)re;
     cylinder.init(512, 256, nu, 1.0, 0.002);
 
+    // dt = 0.002
+    // dx = 10 / 511
     // simulation end: 30
     // simulation iteration: 20 / 0.002 = 15000
     // plot_interval: 0.2
