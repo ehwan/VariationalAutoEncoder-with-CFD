@@ -9,83 +9,86 @@ class AutoEncoder(torch.nn.Module):
   def __init__(self):
     super(AutoEncoder, self).__init__()
     C = 8
+    conv_activation = torch.nn.SiLU()
     self.encoder = torch.nn.Sequential(
       torch.nn.BatchNorm2d(2),
 
       torch.nn.Conv2d( 2, C, 3, padding=1, stride=1 ), # 256x512
       torch.nn.BatchNorm2d( C ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C, C*2, 5, padding=2, stride=2 ), # 128x256
       torch.nn.BatchNorm2d( C*2 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*2, C*4, 5, padding=2, stride=2 ), # 64x128
       torch.nn.BatchNorm2d( C*4 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*4, C*8, 5, padding=2, stride=2 ), # 32x64
       torch.nn.BatchNorm2d( C*8 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*8, C*16, 3, padding=1, stride=2 ), # 16x32
       torch.nn.BatchNorm2d( C*16 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*16, C*32, 3, padding=1, stride=2 ), # 8x16
       torch.nn.BatchNorm2d( C*32 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*32, C*64, 3, padding=1, stride=2 ), # 4x8
       torch.nn.BatchNorm2d( C*64 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Conv2d( C*64, C*128, 3, padding=1, stride=2 ), # 2x4
       torch.nn.BatchNorm2d( C*128 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.Flatten(),
       torch.nn.Linear(8192, 2048),
+      torch.nn.BatchNorm1d(2048),
       torch.nn.SiLU(),
 
-      torch.nn.Linear( 2048, 128 )
+      torch.nn.Linear( 2048, 32 )
     )
     self.decoder = torch.nn.Sequential(
-      torch.nn.Linear( 128, 2048 ),
+      torch.nn.Linear( 32, 2048 ),
+      torch.nn.BatchNorm1d( 2048 ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( 2048, 8192 ),
       torch.nn.Unflatten( 1, (C*128, 2, 4) ),
       torch.nn.BatchNorm2d( C*128 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*128, C*64, 3, padding=1, stride=2, output_padding=1 ), # 4x8
       torch.nn.BatchNorm2d( C*64 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*64, C*32, 3, padding=1, stride=2, output_padding=1 ), # 8x16
       torch.nn.BatchNorm2d( C*32 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*32, C*16, 3, padding=1, stride=2, output_padding=1 ), # 16x32
       torch.nn.BatchNorm2d( C*16 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*16, C*8, 3, padding=1, stride=2, output_padding=1 ), # 32x64
       torch.nn.BatchNorm2d( C*8 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ), # 64x128
       torch.nn.BatchNorm2d( C*4 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 128x256
       torch.nn.BatchNorm2d( C*2 ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 256x512
       torch.nn.BatchNorm2d( C ),
-      torch.nn.ReLU(),
+      conv_activation,
 
       torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=1 )
     )
@@ -103,18 +106,6 @@ def main():
 
   N = inputs.shape[0]
 
-  # no train in cylinder range
-  cylinder_mask = torch.ones( (1, 1, 256, 512), dtype=torch.float32 )
-  dx = 10.0 / 511.0
-  for y in range(256):
-    for x in range(512):
-      fx = x * dx
-      fy = y * dx
-      fx = fx - 2.5
-      fy = fy - 2.5
-      if fx*fx + fy*fy < 0.5*0.5:
-        cylinder_mask[0, 0, y, x] = 0.0
-
   losses = []
   Epochs = 5000
   BatchSize = 30
@@ -126,7 +117,7 @@ def main():
       x = shuffled[batch:batch+BatchSize]
       print( 'train batch: ', x.shape )
       latent = autoencoder.encoder( x )
-      decoded = autoencoder.decoder( latent )*cylinder_mask
+      decoded = autoencoder.decoder( latent )
       loss = torch.nn.functional.mse_loss( decoded, x )
       print( 'Loss: {}'.format(loss.item()) )
       losses.append( loss.item() )
