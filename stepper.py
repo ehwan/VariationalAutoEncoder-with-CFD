@@ -7,44 +7,38 @@ import matplotlib.pyplot as plt
 
 # map reynolds number [1, 200) -> [0, 1)
 def normalize_reynolds( re ):
-  return math.log( re ) / 6.0
+  return re
+  # return math.log( re ) / 6.0
 
 class LatentStepper(torch.nn.Module):
   def __init__(self):
     super(LatentStepper, self).__init__()
 
-    hidden_size = 96
+    hidden_size = 128
 
     self.stepper = torch.nn.Sequential(
-      torch.nn.Linear( 33, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
+      torch.nn.Linear( 129, hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
-      # torch.nn.BatchNorm1d(hidden_size),
       torch.nn.SiLU(),
 
-      torch.nn.Linear( hidden_size, 32)
+      torch.nn.Linear( hidden_size, 128)
     )
 
   def forward( self, latent_and_reynolds ):
@@ -105,16 +99,16 @@ def main():
   del re40raw
   del re5raw
 
-  Epochs = 10000
+  Epochs = 100000
   BatchSize = 30
 
   stepper = LatentStepper()
   stepper.train( True )
-  optimizer = torch.optim.Adam( stepper.parameters(), lr=0.001 )
+  optimizer = torch.optim.Adam( stepper.parameters(), lr=0.00005 )
 
+  min_loss = 1e+9
   losses = []
   for epoch in range(Epochs):
-    print( 'Epoch: {}'.format(epoch) )
     shuffled_indices = torch.randperm( prestep_latents.shape[0] )
     shuffled_pre = prestep_latents[shuffled_indices]
     shuffled_post = poststep_latents[shuffled_indices]
@@ -124,18 +118,21 @@ def main():
       predict_output = stepper( input )
       output = shuffled_post[batch:batch+BatchSize]
       loss = torch.nn.functional.mse_loss( predict_output, output )
-      print( loss.item() )
+      # print( loss.item() )
       optimizer.zero_grad()
       loss.backward()
       avg_loss = avg_loss + loss.item()
       optimizer.step()
     avg_loss = avg_loss / (prestep_latents.shape[0]//BatchSize)
     losses.append( avg_loss )
+    print( "Epoch {} loss: {}".format( epoch, avg_loss ) )
 
-  if epoch % 10 == 9:
-    torch.save( stepper.state_dict(), 'stepper.pt' )
-    torch.save( optimizer.state_dict(), 'stepper_optim.pt' )
-    torch.save( losses, 'stepper_loss.pt' )
+    if avg_loss < min_loss:
+      min_loss = avg_loss
+      torch.save( stepper.state_dict(), 'stepper.pt' )
+      torch.save( optimizer.state_dict(), 'stepper_optim.pt' )
+      torch.save( losses, 'stepper_loss.pt' )
+
 
   plt.plot( losses )
   plt.yscale( 'log' )
