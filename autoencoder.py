@@ -107,7 +107,7 @@ def main():
   N = inputs.shape[0]
 
   losses = []
-  Epochs = 5000
+  Epochs = 2000
   BatchSize = 30
   optimizer = torch.optim.Adam( autoencoder.parameters(), lr=0.001 )
   for epoch in range(Epochs):
