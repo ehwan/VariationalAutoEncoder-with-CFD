@@ -18,11 +18,23 @@ We will see that the neural network is able to predict the next latent vector wi
 
 ## Results
 
-$Re = 5$
+### Loss of AutoEncoder
+
+![](result/autoencoder_loss.png)
+
+
+### Loss of LatentStepper
+
+![](result/latent_stepper_loss.png)
+
+### $Re = 5$
+
 ![](result/plots5/plot0010.png)
 
-$Re = 30$
+### $Re = 30$
+
 ![](result/plots30/plot0030.png)
 
-$Re = 150$
+### $Re = 150$
+
 ![](result/plots150/plot0100.png)
