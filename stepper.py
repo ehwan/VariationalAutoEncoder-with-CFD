@@ -7,38 +7,45 @@ import matplotlib.pyplot as plt
 
 # map reynolds number [1, 200) -> [0, 1)
 def normalize_reynolds( re ):
-  return re
-  # return math.log( re ) / 6.0
+  # return re
+  return math.log( re )
 
 class LatentStepper(torch.nn.Module):
   def __init__(self):
     super(LatentStepper, self).__init__()
 
-    hidden_size = 128
+    hidden_size = 256
 
     self.stepper = torch.nn.Sequential(
-      torch.nn.Linear( 129, hidden_size),
+      torch.nn.Linear( 33, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
       torch.nn.Linear( hidden_size, hidden_size),
+      torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
-      torch.nn.Linear( hidden_size, 128)
+      torch.nn.Linear( hidden_size, 32 )
     )
 
   def forward( self, latent_and_reynolds ):
@@ -51,7 +58,8 @@ class LatentStepper(torch.nn.Module):
 def main():
   print( 'loading autoencoder...' )
   encoder = autoencoder.AutoEncoder()
-  encoder.load_state_dict( torch.load( '../autoencoder.pt' ) )
+  encoder.load_state_dict( torch.load( 'autoencoder.pt' ) )
+  encoder.train( False )
 
   print( 'loading datasets...' )
   re200raw = torch.load( 're200.pt' )
@@ -104,7 +112,7 @@ def main():
 
   stepper = LatentStepper()
   stepper.train( True )
-  optimizer = torch.optim.Adam( stepper.parameters(), lr=0.00005 )
+  optimizer = torch.optim.Adam( stepper.parameters(), lr=0.001 )
 
   min_loss = 1e+9
   losses = []
