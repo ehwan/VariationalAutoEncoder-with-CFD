@@ -3,10 +3,11 @@
 import torch
 
 class Encoder(torch.nn.Module):
-  def __init__(self):
+  def __init__(self, latent_dim=48):
     super(Encoder, self).__init__()
     C = 8
     conv_activation = torch.nn.SiLU()
+    self.latent_dim = latent_dim
     self.encoder = torch.nn.Sequential(
       torch.nn.BatchNorm2d(2),
 
@@ -51,13 +52,13 @@ class Encoder(torch.nn.Module):
       torch.nn.Linear( 4096, 1024 ),
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
-      torch.nn.Linear( 1024, 48 )
+      torch.nn.Linear( 1024, latent_dim )
     )
     self.logvar_layer = torch.nn.Sequential(
       torch.nn.Linear( 4096, 1024 ),
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
-      torch.nn.Linear( 1024, 48 )
+      torch.nn.Linear( 1024, latent_dim )
     )
 
   def forward( self, x ):
@@ -68,12 +69,13 @@ class Encoder(torch.nn.Module):
 
 
 class Decoder(torch.nn.Module):
-  def __init__(self):
+  def __init__(self, latent_dim=48):
     super(Decoder, self).__init__()
     C = 8
+    self.latent_dim = latent_dim
     conv_activation = torch.nn.SiLU()
     self.decoder = torch.nn.Sequential(
-      torch.nn.Linear( 48, 1024 ),
+      torch.nn.Linear( latent_dim, 1024 ),
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
 
@@ -97,6 +99,8 @@ class Decoder(torch.nn.Module):
       torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ), # 32x64
       torch.nn.BatchNorm2d( C*4 ),
       conv_activation,
+    )
+    self.mu_layer = torch.nn.Sequential(
 
       torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
       torch.nn.BatchNorm2d( C*2 ),
@@ -108,8 +112,24 @@ class Decoder(torch.nn.Module):
 
       torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
     )
+    self.logvar_layer = torch.nn.Sequential(
+
+      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
+      torch.nn.BatchNorm2d( C*2 ),
+      conv_activation,
+
+      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 128x256
+      torch.nn.BatchNorm2d( C ),
+      conv_activation,
+
+      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
+    )
+
   def forward( self, z ):
-    return self.decoder( z )
+    z = self.decoder( z )
+    mu = self.mu_layer( z )
+    logvar = self.logvar_layer( z )
+    return mu, logvar
 
 
   
@@ -117,36 +137,36 @@ class Decoder(torch.nn.Module):
 # velocity snapshot at fixed time t ( 2, 256, 512 )
 # encode to latent vector ( 32 )
 class VariationalAutoEncoder(torch.nn.Module):
-  def __init__(self):
+  def __init__(self, latent_dim=48):
     super(VariationalAutoEncoder, self).__init__()
-    self.encoder = Encoder()
-    self.decoder = Decoder()
+    self.encoder = Encoder( latent_dim )
+    self.decoder = Decoder( latent_dim )
+    self.latent_dim = latent_dim
 
   def encode( self, x ):
     return self.encoder( x )
+
+  def decode( self, z ):
+    return self.decoder( z )
 
   def reparameterize( self, mu, logvar ):
     std = torch.exp(0.5*logvar)
     eps = torch.randn_like(std)
     return mu + eps*std
 
-  def latent( self, x ):
-    mu, logvar = self.encode( x )
-    return self.reparameterize( mu, logvar )
-
-  def decode( self, z ):
-    return self.decoder( z )
-
   def loss( self, x ):
+    BatchN = x.shape[0]
     mu, logvar = self.encode( x )
     z = self.reparameterize( mu, logvar )
-    decoded = self.decode( z )
-    reconstruction_loss = torch.nn.functional.mse_loss( decoded, x, reduction='sum' )
+
+    x_hat_mu, x_hat_logvar = self.decode( z )
+    dist = torch.distributions.Normal( x_hat_mu, x_hat_logvar.exp() )
+    reconc_loss = -dist.log_prob( x ).sum()
     kl_divergence = -0.5 * torch.sum( 1 + logvar - mu.pow(2) - logvar.exp() )
-    l = reconstruction_loss + kl_divergence
-    l = l/x.shape[0] # Batch
-    l = l/(2*256*512) # Pixels
-    return l
+    reconc_loss = reconc_loss / (2*256*512)
+    kl_divergence = kl_divergence / self.latent_dim
+    l = reconc_loss + kl_divergence
+    return l / BatchN
 
 
 def main():
