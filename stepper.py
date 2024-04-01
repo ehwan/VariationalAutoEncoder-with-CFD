@@ -2,6 +2,7 @@
 
 import torch
 import autoencoder
+import vae as V
 import math
 import matplotlib.pyplot as plt
 
@@ -14,10 +15,10 @@ class LatentStepper(torch.nn.Module):
   def __init__(self):
     super(LatentStepper, self).__init__()
 
-    hidden_size = 256
+    hidden_size = 128
 
     self.stepper = torch.nn.Sequential(
-      torch.nn.Linear( 33, hidden_size),
+      torch.nn.Linear( 49, hidden_size),
       torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
@@ -45,7 +46,7 @@ class LatentStepper(torch.nn.Module):
       torch.nn.BatchNorm1d( hidden_size ),
       torch.nn.SiLU(),
 
-      torch.nn.Linear( hidden_size, 32 )
+      torch.nn.Linear( hidden_size, 48 )
     )
 
   def forward( self, latent_and_reynolds ):
@@ -57,55 +58,90 @@ class LatentStepper(torch.nn.Module):
 
 def main():
   print( 'loading autoencoder...' )
-  encoder = autoencoder.AutoEncoder()
-  encoder.load_state_dict( torch.load( 'autoencoder.pt' ) )
+  encoder = V.VariationalAutoEncoder()
+  encoder.load_state_dict( torch.load( 'vae.pt' ) )
   encoder.train( False )
 
   print( 'loading datasets...' )
+
   re200raw = torch.load( 're200.pt' )
+  re200mu, re200logvar = encoder.encode( re200raw )
+  del re200raw
   print( 're200 end' )
+
   re100raw = torch.load( 're100.pt' )
+  re100mu, re100logvar = encoder.encode( re100raw )
+  del re100raw
   print( 're100 end' )
+
+  re60raw = torch.load( 're60.pt' )
+  re60mu, re60logvar = encoder.encode( re60raw )
+  del re60raw
+  print( 're60 end' )
+
   re40raw = torch.load( 're40.pt' )
+  re40mu, re40logvar = encoder.encode( re40raw )
+  del re40raw
   print( 're40 end' )
+
   re5raw = torch.load( 're5.pt' )
+  re5mu, re5logvar = encoder.encode( re5raw )
+  del re5raw
   print( 're5 end' )
 
-  N = re200raw.shape[0]
-  print( 'converting to latent space...' )
-  re200latents = encoder.encoder( re200raw ).detach().clone()
-  re100latents = encoder.encoder( re100raw ).detach().clone()
-  re40latents = encoder.encoder( re40raw ).detach().clone()
-  re5latents = encoder.encoder( re5raw ).detach().clone()
+  N = re200mu.shape[0]
 
-  def concat_reynolds_to_latent( latent, re ):
-    return torch.concatenate( [
-        latent, 
-        torch.tensor( [[re]], dtype=torch.float32 ).broadcast_to( latent.shape[0], 1 )
-      ],
-      dim = 1
-    )
-
-  prestep_latents = torch.concatenate(
+  prestep_mu = torch.concatenate(
     [
-      concat_reynolds_to_latent( re200latents[0:N-1], normalize_reynolds(200.0) ),
-      concat_reynolds_to_latent( re100latents[0:N-1], normalize_reynolds(100.0) ),
-      concat_reynolds_to_latent( re40latents[0:N-1], normalize_reynolds(40.0) ),
-      concat_reynolds_to_latent( re5latents[0:N-1], normalize_reynolds(5.0) )
+      re200mu[0:N-1],
+      re100mu[0:N-1],
+      re60mu[0:N-1],
+      re40mu[0:N-1],
+      re5mu[0:N-1]
     ],
     dim=0
   )
-  poststep_latents = torch.concatenate(
-    [re200latents[1:N], re100latents[1:N], re40latents[1:N], re5latents[1:N]],
+  prestep_logvar = torch.concatenate(
+    [
+      re200logvar[0:N-1],
+      re100logvar[0:N-1],
+      re60logvar[0:N-1],
+      re40logvar[0:N-1],
+      re5logvar[0:N-1]
+    ],
     dim=0
   )
-  print( prestep_latents.shape )
-  print( poststep_latents.shape )
+  prestep_reynolds = torch.concatenate(
+    [
+      torch.tensor( [[normalize_reynolds(200.0)]], dtype=torch.float32).broadcast_to( N-1, 1 ),
+      torch.tensor( [[normalize_reynolds(100.0)]], dtype=torch.float32).broadcast_to( N-1, 1 ),
+      torch.tensor( [[normalize_reynolds(60.0)]], dtype=torch.float32).broadcast_to( N-1, 1 ),
+      torch.tensor( [[normalize_reynolds(40.0)]], dtype=torch.float32).broadcast_to( N-1, 1 ),
+      torch.tensor( [[normalize_reynolds(5.0)]], dtype=torch.float32).broadcast_to( N-1, 1 )
+    ],
+    dim=0
+  )
+  poststep_mu = torch.concatenate(
+    [
+      re200mu[1:N],
+      re100mu[1:N],
+      re60mu[1:N],
+      re40mu[1:N],
+      re5mu[1:N]
+    ],
+    dim=0
+  )
+  poststep_logvar = torch.concatenate(
+    [
+      re200logvar[1:N],
+      re100logvar[1:N],
+      re60logvar[1:N],
+      re40logvar[1:N],
+      re5logvar[1:N]
+    ],
+    dim=0
+  )
 
-  del re200raw
-  del re100raw
-  del re40raw
-  del re5raw
 
   Epochs = 100000
   BatchSize = 30
@@ -117,21 +153,28 @@ def main():
   min_loss = 1e+9
   losses = []
   for epoch in range(Epochs):
-    shuffled_indices = torch.randperm( prestep_latents.shape[0] )
-    shuffled_pre = prestep_latents[shuffled_indices]
-    shuffled_post = poststep_latents[shuffled_indices]
+    shuffled_indices = torch.randperm( prestep_mu.shape[0] )
+    pre_latents = torch.concatenate( 
+      [
+        encoder.reparameterize( prestep_mu, prestep_logvar ),
+        prestep_reynolds
+      ],
+      dim=1
+    )
+    post_latents = encoder.reparameterize( poststep_mu, poststep_logvar )
+    shuffled_pre = pre_latents[shuffled_indices].detach().clone()
+    shuffled_post = post_latents[shuffled_indices].detach().clone()
     avg_loss = 0.0
-    for batch in range(0, prestep_latents.shape[0], BatchSize):
-      input = shuffled_pre[batch:batch+BatchSize]
-      predict_output = stepper( input )
-      output = shuffled_post[batch:batch+BatchSize]
-      loss = torch.nn.functional.mse_loss( predict_output, output )
-      # print( loss.item() )
+    for batch in range(0, prestep_mu.shape[0], BatchSize):
+      pre = shuffled_pre[batch:batch+BatchSize]
+      post = shuffled_post[batch:batch+BatchSize]
+      predict_output = stepper( pre )
+      loss = torch.nn.functional.mse_loss( predict_output, post )
       optimizer.zero_grad()
       loss.backward()
       avg_loss = avg_loss + loss.item()
       optimizer.step()
-    avg_loss = avg_loss / (prestep_latents.shape[0]//BatchSize)
+    avg_loss = avg_loss / (prestep_mu.shape[0]//BatchSize)
     losses.append( avg_loss )
     print( "Epoch {} loss: {}".format( epoch, avg_loss ) )
 
