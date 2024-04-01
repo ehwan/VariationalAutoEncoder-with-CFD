@@ -99,20 +99,6 @@ class Decoder(torch.nn.Module):
       torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ), # 32x64
       torch.nn.BatchNorm2d( C*4 ),
       conv_activation,
-    )
-    self.mu_layer = torch.nn.Sequential(
-
-      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
-      torch.nn.BatchNorm2d( C*2 ),
-      conv_activation,
-
-      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 128x256
-      torch.nn.BatchNorm2d( C ),
-      conv_activation,
-
-      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
-    )
-    self.logvar_layer = torch.nn.Sequential(
 
       torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
       torch.nn.BatchNorm2d( C*2 ),
@@ -126,10 +112,7 @@ class Decoder(torch.nn.Module):
     )
 
   def forward( self, z ):
-    z = self.decoder( z )
-    mu = self.mu_layer( z )
-    logvar = self.logvar_layer( z )
-    return mu, logvar
+    return self.decoder( z )
 
 
   
@@ -137,7 +120,7 @@ class Decoder(torch.nn.Module):
 # velocity snapshot at fixed time t ( 2, 256, 512 )
 # encode to latent vector ( 32 )
 class VariationalAutoEncoder(torch.nn.Module):
-  def __init__(self, latent_dim=48):
+  def __init__(self, latent_dim=32):
     super(VariationalAutoEncoder, self).__init__()
     self.encoder = Encoder( latent_dim )
     self.decoder = Decoder( latent_dim )
@@ -159,11 +142,10 @@ class VariationalAutoEncoder(torch.nn.Module):
     mu, logvar = self.encode( x )
     z = self.reparameterize( mu, logvar )
 
-    x_hat_mu, x_hat_logvar = self.decode( z )
-    dist = torch.distributions.Normal( x_hat_mu, x_hat_logvar.exp() )
-    reconc_loss = -dist.log_prob( x ).sum()
-    kl_divergence = -0.5 * torch.sum( 1 + logvar - mu.pow(2) - logvar.exp() )
+    x_hat = self.decode( z )
+    reconc_loss = torch.nn.functional.mse_loss( x_hat, x, reduction='sum' )
     reconc_loss = reconc_loss / (2*256*512)
+    kl_divergence = -0.5 * torch.sum( 1 + logvar - mu.pow(2) - logvar.exp() )
     kl_divergence = kl_divergence / self.latent_dim
     l = reconc_loss + kl_divergence
     return l / BatchN
