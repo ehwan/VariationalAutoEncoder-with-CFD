@@ -4,7 +4,7 @@ import torch
 import math
 
 class Encoder(torch.nn.Module):
-  def __init__(self, latent_dim=48):
+  def __init__(self, latent_dim=32):
     super(Encoder, self).__init__()
     C = 8
     conv_activation = torch.nn.SiLU()
@@ -70,7 +70,7 @@ class Encoder(torch.nn.Module):
 
 
 class Decoder(torch.nn.Module):
-  def __init__(self, latent_dim=48):
+  def __init__(self, latent_dim=32):
     super(Decoder, self).__init__()
     C = 8
     self.latent_dim = latent_dim
@@ -111,8 +111,6 @@ class Decoder(torch.nn.Module):
 
       torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
     )
-    # log( sigma^2 )
-    self.logvar = torch.nn.Parameter( torch.rand(1, dtype=torch.float32), requires_grad=True )
 
   def forward( self, z ):
     return self.decoder( z )
@@ -134,10 +132,6 @@ class VariationalAutoEncoder(torch.nn.Module):
 
   def decode( self, z ):
     return self.decoder( z )
-
-  def decode_sample( self, z ):
-    z = self.decode(z)
-    return z + torch.randn_like(z)*self.decoder.logvar.exp()
 
   def reparameterize( self, mu, logvar ):
     std = torch.exp(0.5*logvar)
@@ -165,29 +159,23 @@ class VariationalAutoEncoder(torch.nn.Module):
     BatchN = x.shape[0]
     mu, logvar = self.encode( x )
 
+    # force the latent distribution to be close to a standard normal distribution
     kl_divergence = -0.5 * torch.sum( 1 + logvar - mu.pow(2) - logvar.exp() )
-    kl_divergence = kl_divergence / BatchN
-
-    decoder_var = self.decoder.logvar.exp()
-    log2pi = math.log( 2*math.pi )
 
     # monte carlo samples for z
     L = 8
 
-    log_p_xz = 0.0
+    l = 0.0
     for sample in range(L):
       z = self.reparameterize( mu, logvar )
       x_hat = self.decode( z )
+      l = l + (x_hat-x).pow(2).sum()
 
-      # don't take mean over batch
-      lp = -(x-x_hat).pow(2) / (2*decoder_var) - 0.5*(log2pi + self.decoder.logvar)
-      log_p_xz += lp.sum()
+    l = l / L
+    l = l + kl_divergence
+    l = l / BatchN
 
-    log_p_xz = log_p_xz / L / BatchN
-
-    ELBO = log_p_xz - kl_divergence
-
-    return -ELBO
+    return l
 
 def main():
   autoencoder = VariationalAutoEncoder()
@@ -204,7 +192,7 @@ def main():
   N = inputs.shape[0]
 
   losses = []
-  Epochs = 10000
+  Epochs = 2000
   BatchSize = 30
   optimizer = torch.optim.Adam( autoencoder.parameters(), lr=0.001 )
   for epoch in range(Epochs):

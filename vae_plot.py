@@ -13,7 +13,6 @@ def main():
 
   inputs200 = torch.load( 're200.pt' )
   mu, logvar = vae.encode( inputs200 )
-  print( 'std: {}'.format(math.exp(0.5*vae.decoder.logvar.item()) ) )
 
   plt.imshow( mu.detach().numpy() )
   plt.colorbar()

@@ -7,11 +7,12 @@ import matplotlib as mpl
 import numpy as np
 import torch
 
-import autoencoder
+import vae as V
 import stepper as stp
+import sys
 
-encoder = autoencoder.AutoEncoder()
-encoder.load_state_dict( torch.load( 'autoencoder.pt' ) )
+encoder = V.VariationalAutoEncoder()
+encoder.load_state_dict( torch.load( 'vae.pt' ) )
 encoder.train( False )
 stepper = stp.LatentStepper()
 stepper.load_state_dict( torch.load( 'stepper.pt' ) )
@@ -19,7 +20,6 @@ stepper.train( False )
 
 # current state ( velx, vely )
 state = torch.zeros( size=(1,2,256,512), dtype=torch.float32 )
-latent = encoder.encoder( state )
 cylinder_mask = torch.ones( (1, 1, 256, 512), dtype=torch.float32 )
 dx = 10.0 / 511.0
 for y in range(256):
@@ -36,16 +36,17 @@ for y in range(256):
       state[0, 0, y, x] = 1.0
       state[0, 1, y, x] = 0.0
 
+latent_mu, latent_logvar = encoder.encode( state )
+
 def step( re ):
   global state
-  global latent
-  latent = encoder.encoder( state )
-  next_latent = stepper.step( latent, re )
+  global latent_mu, latent_logvar
+  next_latent = stepper.step( latent_mu, re )
   next_state = encoder.decoder( next_latent )
   state = next_state*cylinder_mask
-  latent = next_latent
+  latent_mu = next_latent
 
-def plot( i ):
+def plot( i, dirname ):
   Vx = state[0][0].detach().numpy()
   Vy = state[0][1].detach().numpy()
   Xs = np.linspace(0, 10, 512)
@@ -61,12 +62,16 @@ def plot( i ):
   fig.gca().add_patch( plt.Circle( (2.5,2.5), 0.5, color='black' ) )
   plt.colorbar()
   # plt.show()
-  plt.savefig( 'plots/plot{:04d}.png'.format(i) )
+  plt.savefig( dirname + '/plot{:04d}.png'.format(i) )
   plt.clf()
   plt.cla()
 
-os.mkdir( 'plots' )
+
+Re = int(sys.argv[1])
+dirname = 'plots'+str(Re)
+os.makedirs( dirname, exist_ok=True )
+
 for i in range(400):
   print( i )
-  plot(i)
-  step(5.0)
+  plot(i, dirname)
+  step(float(Re))

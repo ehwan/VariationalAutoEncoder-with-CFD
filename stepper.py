@@ -15,39 +15,21 @@ class LatentStepper(torch.nn.Module):
   def __init__(self):
     super(LatentStepper, self).__init__()
 
-    hidden_size = 128
+    latent_size = 32
+    hidden_size = 256
+    hidden_layers = 8
 
     self.stepper = torch.nn.Sequential(
-      torch.nn.Linear( 49, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, hidden_size),
-      torch.nn.BatchNorm1d( hidden_size ),
-      torch.nn.SiLU(),
-
-      torch.nn.Linear( hidden_size, 48 )
+      torch.nn.Linear( latent_size+1, hidden_size ),
+      torch.nn.SiLU()
     )
+
+    for l in range(hidden_layers):
+      self.stepper.append( torch.nn.Linear( hidden_size, hidden_size ) )
+      self.stepper.append( torch.nn.SiLU() )
+
+    self.stepper.append( torch.nn.Linear( hidden_size, latent_size ) )
+
 
   def forward( self, latent_and_reynolds ):
     return self.stepper( latent_and_reynolds )
@@ -154,35 +136,54 @@ def main():
   losses = []
   for epoch in range(Epochs):
     shuffled_indices = torch.randperm( prestep_mu.shape[0] )
-    pre_latents = torch.concatenate( 
-      [
-        encoder.reparameterize( prestep_mu, prestep_logvar ),
-        prestep_reynolds
-      ],
-      dim=1
-    )
-    post_latents = encoder.reparameterize( poststep_mu, poststep_logvar )
-    shuffled_pre = pre_latents[shuffled_indices].detach().clone()
-    shuffled_post = post_latents[shuffled_indices].detach().clone()
+
+    shuffled_pre_mu = prestep_mu[shuffled_indices].detach().clone()
+    shuffled_pre_logvar = prestep_logvar[shuffled_indices].detach().clone()
+    shuffled_pre_reynolds = prestep_reynolds[shuffled_indices].detach().clone()
+    shuffled_post_mu = poststep_mu[shuffled_indices].detach().clone()
+    shuffled_post_logvar = poststep_logvar[shuffled_indices].detach().clone()
+
+    L = 8
+
+    # p(x|z) = exp( -(x-mu)^2 / 2sigma^2 ) / sqrt(2*pi*sigma^2)
+    # log p(x|z) = -(x-mu)^2 / 2sigma^2 - 0.5*log(2*pi*sigma^2)
+    #            = -(x-mu)^2 / 2sigma^2 - 0.5*(  log(sigma^2) + log(2*pi)  )
+    # here, mu and sigma belongs to post step latent distributions
+
     avg_loss = 0.0
+
     for batch in range(0, prestep_mu.shape[0], BatchSize):
-      pre = shuffled_pre[batch:batch+BatchSize]
-      post = shuffled_post[batch:batch+BatchSize]
-      predict_output = stepper( pre )
-      loss = torch.nn.functional.mse_loss( predict_output, post )
+      pre_mu = shuffled_pre_mu[batch:batch+BatchSize]
+      pre_logvar = shuffled_pre_logvar[batch:batch+BatchSize]
+      pre_reynolds = shuffled_pre_reynolds[batch:batch+BatchSize]
+      post_mu = shuffled_post_mu[batch:batch+BatchSize]
+      post_logvar = shuffled_post_logvar[batch:batch+BatchSize]
+      log_p = 0.0
+      for sample in range(L):
+        pre_z = encoder.reparameterize( pre_mu, pre_logvar )
+        predict_post_z = stepper( torch.hstack( [pre_z, pre_reynolds] ) )
+        lp = -(post_mu-predict_post_z).pow(2) / (2*post_logvar.exp()) - 0.5*(math.log(2*math.pi) + post_logvar)
+        log_p = log_p + lp.sum()
+      log_p = log_p / L / BatchSize
+
+      loss = -log_p
+
       optimizer.zero_grad()
       loss.backward()
       avg_loss = avg_loss + loss.item()
       optimizer.step()
+
     avg_loss = avg_loss / (prestep_mu.shape[0]//BatchSize)
     losses.append( avg_loss )
     print( "Epoch {} loss: {}".format( epoch, avg_loss ) )
-
     if avg_loss < min_loss:
       min_loss = avg_loss
       torch.save( stepper.state_dict(), 'stepper.pt' )
       torch.save( optimizer.state_dict(), 'stepper_optim.pt' )
       torch.save( losses, 'stepper_loss.pt' )
+
+
+
 
 
   plt.plot( losses )
