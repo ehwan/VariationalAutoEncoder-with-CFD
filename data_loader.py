@@ -1,5 +1,3 @@
-#! /usr/bin/python3 
-
 import torch
 import os
 import struct
@@ -8,21 +6,10 @@ import struct
 def load_file( filename, N=150 ):
   print( 'loading ' + filename )
   f = open( filename, 'rb' )
-
-  # N frames per file
-  ret = torch.zeros( (N, 2, 256, 512), dtype=torch.float32 )
-  for frame in range(N):
-    print( 'frame ' + str(frame) )
-    # vels
-    buffer = f.read( 4*2*256*512 )
-    vel = struct.unpack( 'ff'*(256*512), buffer )
-    for y in range(256):
-      for x in range(512):
-        idx = y*512 + x
-        ret[frame, 0, y, x] = vel[idx*2]
-        ret[frame, 1, y, x] = vel[idx*2+1]
-
-  return ret
+  buf = torch.frombuffer( f.read(), dtype=torch.float32 )
+  buf = buf.reshape( N, 256, 512, 2 )
+  buf = buf.permute( 0, 3, 1, 2 )
+  return buf.detach().clone()
 
 def load_files( files, N=150 ):
   ret = torch.zeros( (len(files), N, 2, 256, 512), dtype=torch.float32 )
@@ -35,13 +22,3 @@ def load_directory( dirname, N=150 ):
   for i in range(files):
     files[i] = dirname + '/' + files[i]
   return load_files( files, N )
-
-
-def main():
-  data = load_file( 're200.dat', 150 )
-  print( data.shape )
-  # convert binary to python object for faster loading
-  torch.save( data, 're200.pt' )
-
-if __name__ == '__main__':
-  main()

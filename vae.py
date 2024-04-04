@@ -2,6 +2,7 @@
 
 import torch
 import math
+import data_loader
 
 class Encoder(torch.nn.Module):
   def __init__(self, latent_dim=32):
@@ -10,8 +11,6 @@ class Encoder(torch.nn.Module):
     conv_activation = torch.nn.SiLU()
     self.latent_dim = latent_dim
     self.encoder = torch.nn.Sequential(
-      torch.nn.BatchNorm2d(2),
-
       torch.nn.Conv2d( 2, C, 3, padding=1, stride=1 ),
       torch.nn.BatchNorm2d( C ),
       conv_activation,
@@ -101,6 +100,19 @@ class Decoder(torch.nn.Module):
       torch.nn.BatchNorm2d( C*4 ),
       conv_activation,
 
+    )
+    self.mu_layer = torch.nn.Sequential(
+      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
+      torch.nn.BatchNorm2d( C*2 ),
+      conv_activation,
+
+      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 128x256
+      torch.nn.BatchNorm2d( C ),
+      conv_activation,
+
+      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
+    )
+    self.logvar_layer = torch.nn.Sequential(
       torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
       torch.nn.BatchNorm2d( C*2 ),
       conv_activation,
@@ -113,10 +125,12 @@ class Decoder(torch.nn.Module):
     )
 
   def forward( self, z ):
-    return self.decoder( z )
+    z = self.decoder( z )
+    mu = self.mu_layer( z )
+    logvar = self.logvar_layer( z )
+    return mu, logvar
 
 
-  
 
 # velocity snapshot at fixed time t ( 2, 256, 512 )
 # encode to latent vector ( 32 )
@@ -151,10 +165,10 @@ class VariationalAutoEncoder(torch.nn.Module):
 
     # E[ log p(x|z) ] = ?
     # assume the output of decoder follows a normal distribution
-    # p(x|z) = exp( -(x-mu)^2 / 2sigma^2 ) / sqrt(2*pi*sigma^2)
-    # log p(x|z) = -(x-mu)^2 / 2sigma^2 - 0.5*log(2*pi*sigma^2)
-    #            = -(x-mu)^2 / 2sigma^2 - 0.5*(  log(sigma^2) + log(2*pi)  )
-    # here, mu is output of the decoder and sigma is parameter of the decoder
+    # p(x|z) = exp( -0.5 * (x-mu)^2 / sigma^2 ) / sqrt(2*pi*sigma^2)
+    # log p(x|z) = -0.5 * (x-mu)^2 / sigma^2 - 0.5*log(2*pi*sigma^2)
+    #            = -0.5 * (x-mu)^2 / sigma^2 - 0.5*(  log(sigma^2) + log(2*pi)  )
+    # here, (mu, sigma) is output of the decoder
 
     BatchN = x.shape[0]
     mu, logvar = self.encode( x )
@@ -165,34 +179,37 @@ class VariationalAutoEncoder(torch.nn.Module):
     # monte carlo samples for z
     L = 8
 
-    l = 0.0
+    reconcstruction_error = 0.0
     for sample in range(L):
       z = self.reparameterize( mu, logvar )
-      x_hat = self.decode( z )
-      l = l + (x_hat-x).pow(2).sum()
+      x_mu, x_logvar = self.decode( z )
+      lpxz = -0.5 * (x-x_mu).pow(2) / x_logvar.exp() - 0.5 * x_logvar
+      reconcstruction_error = reconcstruction_error - lpxz.sum()
 
-    l = l / L
-    l = l + kl_divergence
-    l = l / BatchN
+    reconcstruction_error = reconcstruction_error / L
+    l = (reconcstruction_error + kl_divergence)/BatchN
 
     return l
 
 def main():
+  device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
   autoencoder = VariationalAutoEncoder()
-  inputs200 = torch.load( 're200.pt' )
-  inputs100 = torch.load( 're100.pt' )
-  inputs40 = torch.load( 're40.pt' )
-  inputs5 = torch.load( 're5.pt' )
-  inputs60 = torch.load( 're60.pt' )
+  autoencoder = autoencoder.to( device )
+  inputs200 = data_loader.load_file( 're200.dat' )
+  inputs100 = data_loader.load_file( 're100.dat' )
+  inputs60 = data_loader.load_file( 're60.dat' )
+  inputs40 = data_loader.load_file( 're40.dat' )
+  inputs5 = data_loader.load_file( 're5.dat' )
 
   inputs = torch.concatenate( (inputs5, inputs40, inputs60, inputs100, inputs200), dim=0 )
 
   print( inputs.shape )
 
   N = inputs.shape[0]
+  inputs = inputs.to( device )
 
   losses = []
-  Epochs = 2000
+  Epochs = 1500
   BatchSize = 30
   optimizer = torch.optim.Adam( autoencoder.parameters(), lr=0.001 )
   for epoch in range(Epochs):

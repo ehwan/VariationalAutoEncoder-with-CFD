@@ -2,23 +2,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import struct
-import os
+import data_loader
 
-f = open( 're100.dat', 'rb' )
-# f.seek( 4*3*256*256*100, os.SEEK_SET )
+buf = data_loader.load_file( 're100.dat', 150 )
 
-W = 512
-H = 256
-
-Vx = np.zeros( (H,W) )
-Vy = np.zeros( (H,W) )
-
-for y in range(H):
-  for x in range(W):
-    buf = f.read( 8 )
-    f2 = struct.unpack( "ff", buf )
-    Vx[y][x] = f2[0]
-    Vy[y][x] = f2[1]
+Vx = buf[0,0]
+Vy = buf[0,1]
 
 plt.quiver( Vx, Vy, np.sqrt(Vx**2 + Vy**2) )
 # plt.imshow( Vx )

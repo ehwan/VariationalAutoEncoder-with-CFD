@@ -1,7 +1,7 @@
 #! /usr/bin/python3
 
 import torch
-import autoencoder
+import data_loader
 import vae as V
 import math
 import matplotlib.pyplot as plt
@@ -39,6 +39,7 @@ class LatentStepper(torch.nn.Module):
     return self( torch.hstack( [latent, re_tensor.broadcast_to( latent.shape[0], 1 )] ) )
 
 def main():
+  device = torch.device( 'cuda' if torch.cuda.is_available() else 'cpu' )
   print( 'loading autoencoder...' )
   encoder = V.VariationalAutoEncoder()
   encoder.load_state_dict( torch.load( 'vae.pt' ) )
@@ -46,27 +47,27 @@ def main():
 
   print( 'loading datasets...' )
 
-  re200raw = torch.load( 're200.pt' )
+  re200raw = data_loader.load_file( 're200.dat' )
   re200mu, re200logvar = encoder.encode( re200raw )
   del re200raw
   print( 're200 end' )
 
-  re100raw = torch.load( 're100.pt' )
+  re100raw = data_loader.load_file( 're100.dat' )
   re100mu, re100logvar = encoder.encode( re100raw )
   del re100raw
   print( 're100 end' )
 
-  re60raw = torch.load( 're60.pt' )
+  re60raw = data_loader.load_file( 're60.dat' )
   re60mu, re60logvar = encoder.encode( re60raw )
   del re60raw
   print( 're60 end' )
 
-  re40raw = torch.load( 're40.pt' )
+  re40raw = data_loader.load_file( 're40.dat' )
   re40mu, re40logvar = encoder.encode( re40raw )
   del re40raw
   print( 're40 end' )
 
-  re5raw = torch.load( 're5.pt' )
+  re5raw = data_loader.load_file( 're5.dat' )
   re5mu, re5logvar = encoder.encode( re5raw )
   del re5raw
   print( 're5 end' )
@@ -131,17 +132,25 @@ def main():
   stepper = LatentStepper()
   stepper.train( True )
   optimizer = torch.optim.Adam( stepper.parameters(), lr=0.001 )
+  scheduler = torch.optim.lr_scheduler.ExponentialLR( optimizer, 0.996 )
+
+  stepper = stepper.to( device )
+  prestep_mu = prestep_mu.to( device )
+  prestep_logvar = prestep_logvar.to( device )
+  prestep_reynolds = prestep_reynolds.to( device )
+  poststep_mu = poststep_mu.to( device )
+  poststep_logvar = poststep_logvar.to( device )
 
   min_loss = 1e+9
   losses = []
   for epoch in range(Epochs):
     shuffled_indices = torch.randperm( prestep_mu.shape[0] )
 
-    shuffled_pre_mu = prestep_mu[shuffled_indices].detach().clone()
-    shuffled_pre_logvar = prestep_logvar[shuffled_indices].detach().clone()
-    shuffled_pre_reynolds = prestep_reynolds[shuffled_indices].detach().clone()
-    shuffled_post_mu = poststep_mu[shuffled_indices].detach().clone()
-    shuffled_post_logvar = poststep_logvar[shuffled_indices].detach().clone()
+    shuffled_pre_mu = prestep_mu[shuffled_indices].detach()
+    shuffled_pre_logvar = prestep_logvar[shuffled_indices].detach()
+    shuffled_pre_reynolds = prestep_reynolds[shuffled_indices].detach()
+    shuffled_post_mu = poststep_mu[shuffled_indices].detach()
+    shuffled_post_logvar = poststep_logvar[shuffled_indices].detach()
 
     L = 8
 
@@ -162,7 +171,7 @@ def main():
       for sample in range(L):
         pre_z = encoder.reparameterize( pre_mu, pre_logvar )
         predict_post_z = stepper( torch.hstack( [pre_z, pre_reynolds] ) )
-        lp = -(post_mu-predict_post_z).pow(2) / (2*post_logvar.exp()) - 0.5*(math.log(2*math.pi) + post_logvar)
+        lp = -0.5*(post_mu-predict_post_z).pow(2) / post_logvar.exp() - 0.5*post_logvar
         log_p = log_p + lp.sum()
       log_p = log_p / L / BatchSize
 
@@ -172,6 +181,9 @@ def main():
       loss.backward()
       avg_loss = avg_loss + loss.item()
       optimizer.step()
+    
+    scheduler.step()
+    print( optimizer.param_groups[0]['lr'] )
 
     avg_loss = avg_loss / (prestep_mu.shape[0]//BatchSize)
     losses.append( avg_loss )
