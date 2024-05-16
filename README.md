@@ -1,5 +1,5 @@
-# CylinderWakeAutoEncoder
-A simulation of wake behind cylinder. dimensionality reduction by auto encoder
+# Variational Auto Encoder with CFD
+A simulation of wake behind cylinder. dimensionality reduction by variational auto encoder
 
 
 ## Introduction
