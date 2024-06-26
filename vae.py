@@ -9,53 +9,51 @@ class Encoder(torch.nn.Module):
     super(Encoder, self).__init__()
     C = 8
     conv_activation = torch.nn.SiLU()
+
+    # input: 2x256x512
     self.latent_dim = latent_dim
     self.encoder = torch.nn.Sequential(
-      torch.nn.Conv2d( 2, C, 3, padding=1, stride=1 ),
+      torch.nn.Conv2d( 2, C, 3 ), # 254x510
       torch.nn.BatchNorm2d( C ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 128x256
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 127x255
 
-      torch.nn.Conv2d( C, C*2, 5, padding=2, stride=1 ),
+      torch.nn.Conv2d( C, C*2, 3 ), # 125x253
       torch.nn.BatchNorm2d( C*2 ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 64x128
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 63x127
 
-      torch.nn.Conv2d( C*2, C*4, 5, padding=2, stride=1 ),
+      torch.nn.Conv2d( C*2, C*4, 3 ), # 61x125
       torch.nn.BatchNorm2d( C*4 ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 32x64
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 31x63
 
-      torch.nn.Conv2d( C*4, C*8, 5, padding=2, stride=1 ),
+      torch.nn.Conv2d( C*4, C*8, 3 ), # 29x61
       torch.nn.BatchNorm2d( C*8 ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 16x32
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 15x31
 
-      torch.nn.Conv2d( C*8, C*16, 3, padding=1, stride=1 ),
+      torch.nn.Conv2d( C*8, C*16, 3 ), # 13x29
       torch.nn.BatchNorm2d( C*16 ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 8x16
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 7x15
 
-      torch.nn.Conv2d( C*16, C*32, 3, padding=1, stride=1 ),
+      torch.nn.Conv2d( C*16, C*32, 3 ), # 5x13
       torch.nn.BatchNorm2d( C*32 ),
       conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 4x8
-
-      torch.nn.Conv2d( C*32, C*64, 3, padding=1, stride=1 ),
-      torch.nn.BatchNorm2d( C*64 ),
-      conv_activation,
-      torch.nn.MaxPool2d( 2, 2 ), # 2x4
+      torch.nn.MaxPool2d( 2, 2, ceil_mode=True ), # 3x7
 
       torch.nn.Flatten(),
     )
+    flatten_dim = C*32*3*7
     self.mu_layer = torch.nn.Sequential(
-      torch.nn.Linear( 4096, 1024 ),
+      torch.nn.Linear( flatten_dim, 1024 ),
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
       torch.nn.Linear( 1024, latent_dim )
     )
     self.logvar_layer = torch.nn.Sequential(
-      torch.nn.Linear( 4096, 1024 ),
+      torch.nn.Linear( flatten_dim, 1024 ),
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
       torch.nn.Linear( 1024, latent_dim )
@@ -72,6 +70,7 @@ class Decoder(torch.nn.Module):
   def __init__(self, latent_dim=32):
     super(Decoder, self).__init__()
     C = 8
+    flatten_dim = C*32*3*7
     self.latent_dim = latent_dim
     conv_activation = torch.nn.SiLU()
     self.decoder = torch.nn.Sequential(
@@ -79,56 +78,36 @@ class Decoder(torch.nn.Module):
       torch.nn.BatchNorm1d( 1024 ),
       torch.nn.SiLU(),
 
-      torch.nn.Linear( 1024, 4096 ),
-      torch.nn.Unflatten( 1, (C*64, 2, 4) ),
-      torch.nn.BatchNorm2d( C*64 ),
-      conv_activation,
-
-      torch.nn.ConvTranspose2d( C*64, C*32, 3, padding=1, stride=2, output_padding=1 ), # 4x8
+      torch.nn.Linear( 1024, flatten_dim ),
+      torch.nn.Unflatten( 1, (C*32, 3, 7) ),
       torch.nn.BatchNorm2d( C*32 ),
       conv_activation,
 
-      torch.nn.ConvTranspose2d( C*32, C*16, 3, padding=1, stride=2, output_padding=1 ), # 8x16
+      torch.nn.ConvTranspose2d( C*32, C*16, 3, padding=0, stride=2, output_padding=0 ),
       torch.nn.BatchNorm2d( C*16 ),
       conv_activation,
 
-      torch.nn.ConvTranspose2d( C*16, C*8, 3, padding=1, stride=2, output_padding=1 ), # 16x32
+      torch.nn.ConvTranspose2d( C*16, C*8, 3, padding=0, stride=2, output_padding=0 ),
       torch.nn.BatchNorm2d( C*8 ),
       conv_activation,
 
-      torch.nn.ConvTranspose2d( C*8, C*4, 5, padding=2, stride=2, output_padding=1 ), # 32x64
+      torch.nn.ConvTranspose2d( C*8, C*4, 3, padding=0, stride=2, output_padding=0 ),
       torch.nn.BatchNorm2d( C*4 ),
       conv_activation,
 
-    )
-    self.mu_layer = torch.nn.Sequential(
-      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
+      torch.nn.ConvTranspose2d( C*4, C*2, 3, padding=0, stride=2, output_padding=0 ),
       torch.nn.BatchNorm2d( C*2 ),
       conv_activation,
 
-      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 128x256
+      torch.nn.ConvTranspose2d( C*2, C, 3, padding=0, stride=2, output_padding=0 ),
       torch.nn.BatchNorm2d( C ),
       conv_activation,
 
-      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
-    )
-    self.logvar_layer = torch.nn.Sequential(
-      torch.nn.ConvTranspose2d( C*4, C*2, 5, padding=2, stride=2, output_padding=1 ), # 64x128
-      torch.nn.BatchNorm2d( C*2 ),
-      conv_activation,
-
-      torch.nn.ConvTranspose2d( C*2, C, 5, padding=2, stride=2, output_padding=1 ), # 128x256
-      torch.nn.BatchNorm2d( C ),
-      conv_activation,
-
-      torch.nn.ConvTranspose2d( C, 2, 3, padding=1, stride=2, output_padding=1 ), # 256x512
+      torch.nn.ConvTranspose2d( C, 2, 3, padding=0, stride=2, output_padding=1 ),
     )
 
   def forward( self, z ):
-    z = self.decoder( z )
-    mu = self.mu_layer( z )
-    logvar = self.logvar_layer( z )
-    return mu, logvar
+    return self.decoder( z )
 
 
 
@@ -182,8 +161,8 @@ class VariationalAutoEncoder(torch.nn.Module):
     reconcstruction_error = 0.0
     for sample in range(L):
       z = self.reparameterize( mu, logvar )
-      x_mu, x_logvar = self.decode( z )
-      lpxz = -0.5 * (x-x_mu).pow(2) / x_logvar.exp() - 0.5 * x_logvar
+      x_mu = self.decode( z )
+      lpxz = -0.5 * (x-x_mu).pow(2)
       reconcstruction_error = reconcstruction_error - lpxz.sum()
 
     reconcstruction_error = reconcstruction_error / L
@@ -206,15 +185,15 @@ def main():
   print( inputs.shape )
 
   N = inputs.shape[0]
-  inputs = inputs.to( device )
+  inputs = inputs.detach().to( device )
 
   losses = []
-  Epochs = 1500
+  Epochs = 300
   BatchSize = 30
   optimizer = torch.optim.Adam( autoencoder.parameters(), lr=0.001 )
   for epoch in range(Epochs):
     print( 'Epoch: {}'.format(epoch) )
-    shuffled = inputs[ torch.randperm(N) ]
+    shuffled = inputs[ torch.randperm(N) ].detach().to(device)
     for batch in range(0, N, BatchSize):
       x = shuffled[batch:batch+BatchSize]
       print( 'train batch: ', x.shape )

@@ -20,8 +20,8 @@ Neural network takes 32-sized latent vector **z** and Reynolds number $Re$ as in
 We will see that the neural network is able to predict the next latent vector with untrained Reynolds number.
 
 #### TODO List
-- [x] Test LSTM for latent stepper
-- [x] Test Transformer for latent stepper
+- [] Test LSTM for latent stepper - (WIP)
+- [] Test Transformer for latent stepper
 
 ## Results
 
@@ -46,12 +46,16 @@ One horizontal line represents compressed snapshot of specific time step, and th
 
 ### $Re = 5$
 
+![](result/plots5/plot0001.png)
 ![](result/plots5/plot0010.png)
 
 ### $Re = 30$
 
+![](result/plots30/plot0004.png)
 ![](result/plots30/plot0030.png)
 
 ### $Re = 150$
 
+![](result/plots150/plot0010.png)
+![](result/plots150/plot0050.png)
 ![](result/plots150/plot0100.png)

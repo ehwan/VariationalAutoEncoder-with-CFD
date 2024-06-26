@@ -8,12 +8,12 @@ import vae as V
 
 def main():
   vae = V.VariationalAutoEncoder()
-  vae.load_state_dict( torch.load( 'vae.pt' ) )
+  vae.load_state_dict( torch.load( 'vae.pt', map_location='cpu' ) )
   vae.train( False )
 
   inputs200 = data_loader.load_file( 're200.dat' )
   mu, logvar = vae.encode( inputs200 )
-  x_mu, x_logvar = vae.decode( mu )
+  x_mu = vae.decode( mu )
 
   error = (x_mu - inputs200).pow(2)
   error_mean = error.mean( dim=(1,2,3) )
@@ -38,10 +38,6 @@ def main():
   plt.imshow( x_mu[100,0].detach().numpy() )
   plt.colorbar()
   plt.title( 'x_mu' )
-  plt.show()
-  plt.imshow( x_logvar[100,0].exp().detach().numpy() )
-  plt.colorbar()
-  plt.title( 'x_var' )
   plt.show()
 
 if __name__ == '__main__':
