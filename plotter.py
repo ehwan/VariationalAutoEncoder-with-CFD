@@ -1,5 +1,9 @@
 #! /usr/bin/python3
 
+'''
+this will simulate on the latent-space and saves the decoded images
+'''
+
 import os
 
 import matplotlib.pyplot as plt
@@ -42,7 +46,7 @@ def step( re ):
   global state
   global latent_mu, latent_logvar
   next_latent = stepper.step( latent_mu, re )
-  next_state, _ = encoder.decode( next_latent )
+  next_state = encoder.decode( next_latent )
   state = next_state*cylinder_mask
   latent_mu = next_latent
 

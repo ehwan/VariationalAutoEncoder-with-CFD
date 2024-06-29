@@ -4,20 +4,21 @@ import torch
 import data_loader
 import vae as V
 import math
-import matplotlib.pyplot as plt
 
 # map reynolds number [1, 200) -> [0, 1)
 def normalize_reynolds( re ):
   # return re
   return math.log( re )
 
+# takes a latent vector and reynolds number, (N, 33)
+# outputs a new latent vector (N, 32)
 class LatentStepper(torch.nn.Module):
   def __init__(self):
     super(LatentStepper, self).__init__()
 
     latent_size = 32
-    hidden_size = 256
-    hidden_layers = 8
+    hidden_size = 128
+    hidden_layers = 6
 
     self.stepper = torch.nn.Sequential(
       torch.nn.Linear( latent_size+1, hidden_size ),
@@ -48,27 +49,27 @@ def main():
   print( 'loading datasets...' )
 
   re200raw = data_loader.load_file( 're200.dat' )
-  re200mu, re200logvar = encoder.encode( re200raw )
+  re200mu, _ = encoder.encode( re200raw )
   del re200raw
   print( 're200 end' )
 
   re100raw = data_loader.load_file( 're100.dat' )
-  re100mu, re100logvar = encoder.encode( re100raw )
+  re100mu, _ = encoder.encode( re100raw )
   del re100raw
   print( 're100 end' )
 
   re60raw = data_loader.load_file( 're60.dat' )
-  re60mu, re60logvar = encoder.encode( re60raw )
+  re60mu, _ = encoder.encode( re60raw )
   del re60raw
   print( 're60 end' )
 
   re40raw = data_loader.load_file( 're40.dat' )
-  re40mu, re40logvar = encoder.encode( re40raw )
+  re40mu, _ = encoder.encode( re40raw )
   del re40raw
   print( 're40 end' )
 
   re5raw = data_loader.load_file( 're5.dat' )
-  re5mu, re5logvar = encoder.encode( re5raw )
+  re5mu, _ = encoder.encode( re5raw )
   del re5raw
   print( 're5 end' )
 
@@ -76,21 +77,11 @@ def main():
 
   prestep_mu = torch.concatenate(
     [
-      re200mu[0:N-1],
-      re100mu[0:N-1],
-      re60mu[0:N-1],
-      re40mu[0:N-1],
-      re5mu[0:N-1]
-    ],
-    dim=0
-  )
-  prestep_logvar = torch.concatenate(
-    [
-      re200logvar[0:N-1],
-      re100logvar[0:N-1],
-      re60logvar[0:N-1],
-      re40logvar[0:N-1],
-      re5logvar[0:N-1]
+      re200mu[0:-1],
+      re100mu[0:-1],
+      re60mu[0:-1],
+      re40mu[0:-1],
+      re5mu[0:-1]
     ],
     dim=0
   )
@@ -104,78 +95,45 @@ def main():
     ],
     dim=0
   )
-  poststep_mu = torch.concatenate(
+  inputs = torch.concatenate( [prestep_mu, prestep_reynolds], dim=1 )
+  answer = torch.concatenate(
     [
-      re200mu[1:N],
-      re100mu[1:N],
-      re60mu[1:N],
-      re40mu[1:N],
-      re5mu[1:N]
-    ],
-    dim=0
-  )
-  poststep_logvar = torch.concatenate(
-    [
-      re200logvar[1:N],
-      re100logvar[1:N],
-      re60logvar[1:N],
-      re40logvar[1:N],
-      re5logvar[1:N]
+      re200mu[1:],
+      re100mu[1:],
+      re60mu[1:],
+      re40mu[1:],
+      re5mu[1:]
     ],
     dim=0
   )
 
 
-  Epochs = 100000
+  Epochs = 5000
   BatchSize = 30
 
   stepper = LatentStepper()
   stepper.train( True )
   optimizer = torch.optim.Adam( stepper.parameters(), lr=0.001 )
-  scheduler = torch.optim.lr_scheduler.ExponentialLR( optimizer, 0.996 )
+  scheduler = torch.optim.lr_scheduler.StepLR( optimizer, step_size=150, gamma=0.85 )
 
   stepper = stepper.to( device )
-  prestep_mu = prestep_mu.to( device )
-  prestep_logvar = prestep_logvar.to( device )
-  prestep_reynolds = prestep_reynolds.to( device )
-  poststep_mu = poststep_mu.to( device )
-  poststep_logvar = poststep_logvar.to( device )
+  inputs = inputs.detach().to( device )
+  answer = answer.detach().to( device )
 
   min_loss = 1e+9
   losses = []
   for epoch in range(Epochs):
-    shuffled_indices = torch.randperm( prestep_mu.shape[0] )
+    shuffled_indices = torch.randperm( inputs.shape[0] )
+    shuffled_inputs = inputs[shuffled_indices].detach().to(device)
+    shuffled_answer = answer[shuffled_indices].detach().to(device)
+    avg_loss = 0
 
-    shuffled_pre_mu = prestep_mu[shuffled_indices].detach()
-    shuffled_pre_logvar = prestep_logvar[shuffled_indices].detach()
-    shuffled_pre_reynolds = prestep_reynolds[shuffled_indices].detach()
-    shuffled_post_mu = poststep_mu[shuffled_indices].detach()
-    shuffled_post_logvar = poststep_logvar[shuffled_indices].detach()
+    for batch in range(0, inputs.shape[0], BatchSize):
+      batch_inputs = shuffled_inputs[batch:batch+BatchSize]
+      batch_answer = shuffled_answer[batch:batch+BatchSize]
 
-    L = 8
-
-    # p(x|z) = exp( -(x-mu)^2 / 2sigma^2 ) / sqrt(2*pi*sigma^2)
-    # log p(x|z) = -(x-mu)^2 / 2sigma^2 - 0.5*log(2*pi*sigma^2)
-    #            = -(x-mu)^2 / 2sigma^2 - 0.5*(  log(sigma^2) + log(2*pi)  )
-    # here, mu and sigma belongs to post step latent distributions
-
-    avg_loss = 0.0
-
-    for batch in range(0, prestep_mu.shape[0], BatchSize):
-      pre_mu = shuffled_pre_mu[batch:batch+BatchSize]
-      pre_logvar = shuffled_pre_logvar[batch:batch+BatchSize]
-      pre_reynolds = shuffled_pre_reynolds[batch:batch+BatchSize]
-      post_mu = shuffled_post_mu[batch:batch+BatchSize]
-      post_logvar = shuffled_post_logvar[batch:batch+BatchSize]
-      log_p = 0.0
-      for sample in range(L):
-        pre_z = encoder.reparameterize( pre_mu, pre_logvar )
-        predict_post_z = stepper( torch.hstack( [pre_z, pre_reynolds] ) )
-        lp = -0.5*(post_mu-predict_post_z).pow(2) / post_logvar.exp() - 0.5*post_logvar
-        log_p = log_p + lp.sum()
-      log_p = log_p / L / BatchSize
-
-      loss = -log_p
+      batch_predict = stepper( batch_inputs )
+      loss = torch.nn.functional.mse_loss( batch_predict, batch_answer )
 
       optimizer.zero_grad()
       loss.backward()
@@ -183,26 +141,18 @@ def main():
       optimizer.step()
     
     scheduler.step()
-    print( optimizer.param_groups[0]['lr'] )
+    # print( f'lr: {optimizer.param_groups[0]['lr']}' )
 
-    avg_loss = avg_loss / (prestep_mu.shape[0]//BatchSize)
+    avg_loss = avg_loss / (inputs.shape[0]//BatchSize)
     losses.append( avg_loss )
     print( "Epoch {} loss: {}".format( epoch, avg_loss ) )
-    if avg_loss < min_loss:
-      min_loss = avg_loss
+
+    if epoch % 100 == 0:
       torch.save( stepper.state_dict(), 'stepper.pt' )
       torch.save( optimizer.state_dict(), 'stepper_optim.pt' )
       torch.save( losses, 'stepper_loss.pt' )
 
 
-
-
-
-  plt.plot( losses )
-  plt.yscale( 'log' )
-  plt.ylabel( 'loss' )
-  plt.xlabel( 'epochs' )
-  plt.show()
 
 if __name__ == '__main__':
   main()
