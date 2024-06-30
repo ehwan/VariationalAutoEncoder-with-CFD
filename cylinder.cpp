@@ -294,7 +294,7 @@ struct CylinderWakeLBM
 
 int main(int argc, char** argv)
 {
-  std::vector<int> Res = { 5, 40, 60, 100, 200 };
+  std::vector<int> Res = { 5, 20, 40, 60, 100, 150, 200 };
 
   for (int re : Res)
   {
