@@ -19,8 +19,8 @@ stepper = stp.LSTM( 32, 128 )
 stepper.load_state_dict( torch.load( 'lstm.pt' ) )
 stepper.train( False )
 
-inputs200 = data_loader.load_file( 're200.dat' )
-latents, _ = encoder.encode( inputs200[0:5,:,:] )
+inputs = data_loader.load_file( 're40.dat' )
+latents, _ = encoder.encode( inputs[0:10,:,:] )
 
 # current state ( velx, vely )
 state = torch.zeros( size=(1,2,256,512), dtype=torch.float32 )
@@ -40,18 +40,22 @@ for y in range(256):
       state[0, 0, y, x] = 1.0
       state[0, 1, y, x] = 0.0
 
-latents = latents.reshape( -1, 32 )
+# latents, _ = encoder.encode( state )
+latents = latents.reshape( 1, -1, 32 )
 
 def step( re ):
   global state
   global latents
-  # latents.shape = (T, 32)
-  # next_latents.shape = (T+1, 32)
+  # latents.shape = (1, T, 32)
+  # next_latents.shape = (1, 32)
   next_latents = stepper(latents)
   print( latents.shape )
-  next_state = encoder.decode( next_latents[-1].reshape(1, 32) )
+  next_state = encoder.decode( next_latents )
   state = next_state*cylinder_mask
-  latents = next_latents
+  if latents.shape[1] >= 10:
+    latents = torch.concatenate( [latents[:,1:], next_latents.reshape(1,1,32)], dim=1 )
+  else:
+    latents = torch.concatenate( [latents, next_latents.reshape(1,1,32)], dim=1 )
 
 def plot( i, dirname ):
   Vx = state[0][0].detach().numpy()
