@@ -85,7 +85,7 @@ One horizontal line represents compressed snapshot of specific time step, and th
 
 For each iteration, the $L_2$ error is calculated as:
 
-$ \sum_{x=0}^{512} \sum_{y=0}^{256} |predicted(x,y) - simulated(x,y)|^2 $
+$ \sum_{x=0}^{512} \sum_{y=0}^{256} |predicted(x,y) - simulated(x,y)|^2 / (256*512) $
 
 and the $L_{inf}$ error is calculated as:
 
