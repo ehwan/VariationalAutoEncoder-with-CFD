@@ -75,9 +75,21 @@ Snapshot of compressed result of $Re = 200$.
 One horizontal line represents compressed snapshot of specific time step, and the y-axis represents the time step.
 
 
-### Loss of LatentStepper
+### Loss of LatentStepper (Training loss)
 
 ![](result/latent_stepper_loss.png)
+
+### Loss of LatentStepper with untrained Reynolds number ($Re=150$)
+
+![](result/error150.png)
+
+For each iteration, the $L_2$ error is calculated as:
+
+$ \sum_{x=0}^{512} \sum_{y=0}^{256} |predicted(x,y) - simulated(x,y)|^2 $
+
+and the $L_{inf}$ error is calculated as:
+
+$ \max_{pixel\in image} |predicted(pixel) - simulated(pixel)| $
 
 
 ## Result of Untrained Reynolds number, reconstructed from VAE
